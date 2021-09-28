@@ -1,6 +1,8 @@
 import os
 import subprocess
 import time
+
+import requests
 import win32api
 import win32con
 import win32gui_struct
@@ -45,7 +47,7 @@ def bye(sysTrayIcon): print('Bye, then.')
 def forceUSBTether(sysTrayIcon):
     os.system("adb shell svc usb setFunctions rndis")  # Enable USB tethring
     string = "%s" % ((subprocess.run("adb shell svc usb getFunctions", capture_output=True)).stderr)
-    if(string.find('rndis') != -1):
+    if (string.find('rndis') != -1):
         win32api.MessageBox(0, 'USB Tethering Succesfully TURNED ON', 'Success', 0x00001000)  # Alert
         os.system("adb shell input keyevent 26")  # Lock phone
 
@@ -105,25 +107,32 @@ class Notification:
 
     def onDeviceChange(self, hwnd, msg, wparam, lparam):
         dev_broadcast_hdr = DEV_BROADCAST_HDR.from_address(lparam)
-        string = "%s" % ((subprocess.run("adb shell svc usb getFunctions", capture_output=True)).stderr)
-        if wparam == DBT_DEVICEARRIVAL and dev_broadcast_hdr.dbch_devicetype == 3 and string.find('rndis') == -1:
-            time.sleep(1)
-            string = "%s" % (subprocess.run("adb devices", capture_output=True).stdout)
-            if (string.find('LMG710') != -1):                                                                                             #check if ADB device attached
+        try:  # Check for internet connection
+            request = requests.get('https://www.google.com', timeout=5)
+            print('Connected')
+        except(requests.ConnectionError, requests.Timeout):  # No Connection found
+            string = "%s" % ((subprocess.run("adb shell svc usb getFunctions", capture_output=True)).stderr)
+            if wparam == DBT_DEVICEARRIVAL and dev_broadcast_hdr.dbch_devicetype == 3 and string.find('rndis') == -1:
                 time.sleep(1)
-                string = "%s" % ((subprocess.run("adb shell svc usb getFunctions", capture_output=True)).stderr)
-                if (string.find('rndis') == -1):                                                                                        #check if USB Tethering is on
-                    os.system("adb shell input keyevent 82 && adb shell input text 1234 && adb shell input keyevent 66")                #Enter password and hit OK
-                    time.sleep(2.5)
-                    os.system("adb shell svc usb setFunctions rndis")                                        #Enable USB tethring
+                string = "%s" % (subprocess.run("adb devices", capture_output=True).stdout)
+                if (string.find('LMG710') != -1):  # check if ADB device attached
+                    time.sleep(1)
                     string = "%s" % ((subprocess.run("adb shell svc usb getFunctions", capture_output=True)).stderr)
-
-                    while (string.find('rndis') == -1):
-                        os.system("adb shell svc usb setFunctions rndis")
+                    if (string.find('rndis') == -1):  # check if USB Tethering is on
+                        os.system(
+                            "adb shell input keyevent 82 && adb shell input text 1234 && adb shell input keyevent 66")  #Turn On phone Enter password and hit OK
+                        time.sleep(2.5)
+                        os.system("adb shell svc usb setFunctions rndis")  # Enable USB tethring
                         string = "%s" % ((subprocess.run("adb shell svc usb getFunctions", capture_output=True)).stderr)
-                    win32api.MessageBox(0, 'USB Tethering Succesfully TURNED ON', 'Success', 0x00001000)  # Alert
-                os.system("adb shell input keyevent 26")                                                                        #Lock phone
-                time.sleep(5)
+
+                        while (string.find('rndis') == -1):
+                            os.system("adb shell svc usb setFunctions rndis")
+                            string = "%s" % (
+                                (subprocess.run("adb shell svc usb getFunctions", capture_output=True)).stderr)
+                        win32api.MessageBox(0, 'USB Tethering Succesfully TURNED ON', 'Success', 0x00001000)  # Alert
+                    os.system("adb shell input keyevent 26")  # Lock phone
+                    time.sleep(5)
+
         return 1
 
 
@@ -164,7 +173,7 @@ class SysTrayIcon(object):
         window_class = win32gui.WNDCLASS()
         hinst = window_class.hInstance = win32gui.GetModuleHandle(None)
         window_class.lpszClassName = self.window_class_name
-        window_class.style = win32con.CS_VREDRAW | win32con.CS_HREDRAW;
+        window_class.style = win32con.CS_VREDRAW | win32con.CS_HREDRAW
         window_class.hCursor = win32gui.LoadCursor(0, win32con.IDC_ARROW)
         window_class.hbrBackground = win32con.COLOR_WINDOW
         window_class.lpfnWndProc = message_map  # could also specify a wndproc.
@@ -335,5 +344,6 @@ def non_string_iterable(obj):
 
 icons = itertools.cycle(glob.glob('icon.ico'))
 hover_text = "USB Tethering Enabler"
-menu_options = (('Force USB Tethering',None,forceUSBTether),)
+menu_options = (('Force USB Tethering', None, forceUSBTether),)
+
 SysTrayIcon(next(icons), hover_text, menu_options, on_quit=bye, default_menu_index=1)
